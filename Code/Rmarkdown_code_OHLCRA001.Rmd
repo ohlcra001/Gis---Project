@@ -1,0 +1,91 @@
+---
+title: "GIS_OHLCRA001"
+author: "Craig Oehley"
+date: '2022-04-24'
+output: html_document
+fig_width: 20
+fig_height: 12
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.width=10, fig.height=6)
+```
+
+## How Deep are Porcelain Crabs found?
+
+### Installing and loading packages
+
+```{r, message=FALSE}
+library(raster)
+library(sp)
+library(rosm)
+library(ggspatial)
+library(tidyverse)
+library(readr)
+library(readxl)
+library(rmarkdown)
+library(sf)
+library(terra)
+```
+
+### Reading in Points data
+
+```{r}
+data <- bind_cols(read_xlsx("Copy_raw_Porcelain_family_data.xlsx", range = "A1:H71"),
+                  read_xlsx("Copy_raw_Porcelain_family_data.xlsx", range = "K1:K71"),
+                  read_xlsx("Copy_raw_Porcelain_family_data.xlsx", range = "S1:T71"))
+```
+
+### Cleaning, converting and cropping spatial data
+
+```{r, warning=FALSE}
+data <- na.omit(data) #Omitting missing coordinates
+Crabs <- st_as_sf(data, coords = c("Longitude1", "Latitude1"), crs = 4326)
+ext <- c(16.45508, 32.89857, -34.83428, -26.8525) #Cropped according to bathymetry extent
+names(ext) <- c("xmin", "xmax", "ymin", "ymax")
+Crabs <- st_crop(Crabs,ext)
+```
+
+### Reading in bathymetry map and aggregating to reduce size
+
+```{r}
+bath <- rast("Data/William_d.w_Bathymetry_SA .grd")
+bath <- aggregate(bath, fact = 3,fun = mean)
+```
+
+### Plot data points against bathymetry
+
+```{r}
+bath %>% as.data.frame(xy = TRUE) %>%
+  ggplot()+
+  geom_raster(aes(x = x, y = y, fill = `William_d.w_Bathymetry_SA `))+
+  geom_sf(data=Crabs)
+```
+
+As we can see, there are quite a few points which seem to lie on land, these obviously need to be excluded or at least identified.
+
+### Cropping points to ocean
+
+```{r, warning=FALSE}
+simplebath <- aggregate(bath, fact = 5, fun = mean) #Creating a simpler bathymetry raster to save loading times
+bathv <-terra::as.polygons(simplebath) #Converting raster to polygon
+bathsf <- st_as_sf(bathv, crs = 4326) #Converting to spatial object used by sf package
+crab_on_water <- st_intersection(Crabs,bathsf) #Finding data points which lie within bathymetry 
+```
+
+### Plotting new data points against bathymetry
+
+Because so few data points remained, i decided to add back the land points but left them in red to be clearly distinguished from the true data points
+
+```{r , out}
+bath %>% as.data.frame(xy = TRUE) %>%
+ggplot() +
+  geom_raster(aes(x = x, y = y, fill = `William_d.w_Bathymetry_SA `))+
+  geom_sf(data=Crabs,colour = 'red')+ #To distinguish from the actual data points
+  geom_sf(data=crab_on_water) 
+```
+
+Now that we've plotted our output we can revist the original question, indeed it seems that all Porcelain crabs in this data set are found close to the shore and in shallow regions
+
+
+
